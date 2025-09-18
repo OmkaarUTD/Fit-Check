@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { OutfitLayer, WardrobeItem } from '../types';
-import { Trash2Icon, SaveIcon, GrabberIcon, SparklesIcon, XIcon } from './icons';
+import { Trash2Icon, SaveIcon, GrabberIcon, SparklesIcon, XIcon, LightbulbIcon } from './icons';
 import { Reorder, AnimatePresence, motion } from 'framer-motion';
 
 interface OutfitStackProps {
@@ -22,6 +22,8 @@ interface OutfitStackProps {
   onClearStyleScore: () => void;
   styleScore: { score: number; critique: string } | null;
   isScoringStyle: boolean;
+  onGetStyleSuggestions: () => void;
+  isSuggesting: boolean;
 }
 
 const OutfitStack: React.FC<OutfitStackProps> = ({ 
@@ -37,7 +39,9 @@ const OutfitStack: React.FC<OutfitStackProps> = ({
   onGetStyleScore,
   onClearStyleScore,
   styleScore,
-  isScoringStyle
+  isScoringStyle,
+  onGetStyleSuggestions,
+  isSuggesting,
 }) => {
   const reorderableGarments = garmentHistory.slice(1);
 
@@ -88,6 +92,19 @@ const OutfitStack: React.FC<OutfitStackProps> = ({
       <div className="flex items-start justify-between border-b border-gray-400/50 pb-2 mb-3">
         <h2 className="text-xl font-serif tracking-wider text-gray-800">Outfit Stack</h2>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={onGetStyleSuggestions}
+            disabled={isLoading || isSuggesting || (garmentHistory.length <= 1 && activeAccessories.length === 0)}
+            className="flex items-center gap-2 text-sm font-semibold text-gray-700 bg-gray-200/60 px-3 py-1.5 rounded-md hover:bg-gray-300/80 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Get style suggestions"
+          >
+            {isSuggesting ? (
+                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+            ) : (
+                <LightbulbIcon className="w-4 h-4" />
+            )}
+            Suggest
+          </button>
           <button
             onClick={onGetStyleScore}
             disabled={isLoading || isScoringStyle || (garmentHistory.length <= 1 && activeAccessories.length === 0)}

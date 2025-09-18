@@ -9,9 +9,9 @@ import StartScreen from './components/StartScreen';
 import Canvas from './components/Canvas';
 import WardrobePanel from './components/WardrobeModal';
 import OutfitStack from './components/OutfitStack';
-import { generateGarmentTryOnImage, generateAccessoryTryOnImage, generatePoseVariation, generateStyleScore } from './services/geminiService';
+import { generateGarmentTryOnImage, generateAccessoryTryOnImage, generatePoseVariation, generateStyleScore, generateStyleSuggestions } from './services/geminiService';
 import { OutfitLayer, WardrobeItem, SavedOutfit } from './types';
-import { ChevronDownIcon, ChevronUpIcon, RedoIcon, UndoIcon } from './components/icons';
+import { ChevronDownIcon, ChevronUpIcon } from './components/icons';
 import { defaultWardrobe } from './wardrobe';
 import Footer from './components/Footer';
 import { getFriendlyErrorMessage, urlToFile } from './lib/utils';
@@ -101,6 +101,43 @@ const useHistoryState = <T,>(initialState: T) => {
   return { state, setState, undo, redo, canUndo, canRedo, reset };
 };
 
+const StyleSuggestionsPanel: React.FC<{
+  suggestions: WardrobeItem[];
+  onItemSelect: (file: File, item: WardrobeItem) => Promise<void>;
+  isLoading: boolean;
+}> = ({ suggestions, onItemSelect, isLoading }) => {
+  const handleSuggestionClick = async (item: WardrobeItem) => {
+    if (isLoading) return;
+    try {
+      const file = await urlToFile(item.url, item.name);
+      await onItemSelect(file, item);
+    } catch (err) {
+      console.error("Failed to handle suggestion click", err);
+    }
+  };
+
+  return (
+    <div className="pt-6 border-t border-gray-400/50">
+      <h2 className="text-xl font-serif tracking-wider text-gray-800 mb-3">You might also like...</h2>
+      <div className="grid grid-cols-3 gap-3">
+        {suggestions.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => handleSuggestionClick(item)}
+            disabled={isLoading}
+            className="relative aspect-square border rounded-lg overflow-hidden transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-800 group disabled:opacity-60 disabled:cursor-not-allowed"
+            aria-label={`Select ${item.name}`}
+          >
+            <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <p className="text-white text-xs font-bold text-center p-1">{item.name}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const initialState: AppState = {
@@ -124,6 +161,8 @@ const App: React.FC = () => {
   const [savedOutfits, setSavedOutfits] = useState<SavedOutfit[]>([]);
   const [styleScore, setStyleScore] = useState<{ score: number; critique: string } | null>(null);
   const [isScoringStyle, setIsScoringStyle] = useState(false);
+  const [styleSuggestions, setStyleSuggestions] = useState<WardrobeItem[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
   const isMobile = useMediaQuery('(max-width: 767px)');
 
   const STORAGE_KEY = 'virtual-try-on-outfits';
@@ -183,9 +222,10 @@ const App: React.FC = () => {
     }
   }, [savedOutfits]);
   
-  // Clear style score whenever the active outfit changes
+  // Clear style score and suggestions whenever the active outfit changes
   useEffect(() => {
     clearStyleScore();
+    setStyleSuggestions([]);
   }, [activeGarmentLayers, activeAccessories, clearStyleScore]);
 
   const updateAccessoryLayer = useCallback(async (accessories: WardrobeItem[], overrideBaseImageUrl?: string) => {
@@ -514,6 +554,41 @@ const App: React.FC = () => {
     }
   };
 
+  const handleGetStyleSuggestions = async () => {
+    if (isSuggesting || isLoading) return;
+  
+    const currentItems = [
+        ...activeGarmentLayers.slice(1).map(layer => layer.item!),
+        ...activeAccessories
+    ];
+  
+    if (currentItems.length === 0) {
+        setError("Add at least one item to get suggestions.");
+        setTimeout(() => setError(null), 4000);
+        return;
+    }
+  
+    setIsSuggesting(true);
+    setError(null);
+    setStyleSuggestions([]);
+  
+    try {
+        const availableItems = wardrobe.filter(item => !activeItemIds.includes(item.id));
+        if (availableItems.length === 0) {
+            return; 
+        }
+        
+        const suggestedIds = await generateStyleSuggestions(currentItems, availableItems);
+        const suggestions = wardrobe.filter(item => suggestedIds.includes(item.id));
+        setStyleSuggestions(suggestions);
+  
+    } catch (err) {
+        setError(getFriendlyErrorMessage(err, 'Failed to get style suggestions'));
+    } finally {
+        setIsSuggesting(false);
+    }
+  };
+
   const viewVariants = {
     initial: { opacity: 0, y: 15 },
     animate: { opacity: 1, y: 0 },
@@ -596,7 +671,26 @@ const App: React.FC = () => {
                       onClearStyleScore={clearStyleScore}
                       styleScore={styleScore}
                       isScoringStyle={isScoringStyle}
+                      onGetStyleSuggestions={handleGetStyleSuggestions}
+                      isSuggesting={isSuggesting}
                     />
+                    <AnimatePresence>
+                      {styleSuggestions.length > 0 && (
+                        <motion.div 
+                          layout 
+                          initial={{ opacity: 0, height: 0, y: -20 }} 
+                          animate={{ opacity: 1, height: 'auto', y: 0 }} 
+                          exit={{ opacity: 0, height: 0, y: -20 }}
+                          transition={{ duration: 0.4, ease: 'easeInOut' }}
+                        >
+                          <StyleSuggestionsPanel 
+                            suggestions={styleSuggestions} 
+                            onItemSelect={handleItemSelect} 
+                            isLoading={isLoading} 
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                     <WardrobePanel
                       onItemSelect={handleItemSelect}
                       activeItemIds={activeItemIds}

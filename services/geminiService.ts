@@ -192,3 +192,65 @@ Return ONLY a JSON object with your analysis.`;
         throw new Error("The AI returned an unexpected format for the style score. Please try again.");
     }
 };
+
+export const generateStyleSuggestions = async (currentItems: WardrobeItem[], availableItems: WardrobeItem[]): Promise<string[]> => {
+    if (availableItems.length === 0) {
+        return [];
+    }
+
+    const currentOutfitDescription = currentItems.length > 0
+        ? currentItems.map(item => `- ${item.name} (${item.type})`).join('\n')
+        : 'The user has not selected any items yet.';
+
+    const availableItemsDescription = availableItems
+        .map(item => `- ${item.name} (ID: ${item.id})`)
+        .join('\n');
+
+    const prompt = `You are an expert fashion stylist AI. Your task is to recommend complementary items for an existing outfit.
+
+User's Current Outfit:
+${currentOutfitDescription}
+
+Available items in the wardrobe:
+${availableItemsDescription}
+
+Based on the current outfit, suggest up to 3 items from the available wardrobe list that would pair well. Consider style, color, and overall aesthetic. Do not suggest items that are redundant or clash with the current outfit.
+
+Return ONLY a JSON object with a single key "suggestions", which is an array of the string IDs of your recommended items from the available list. For example: { "suggestions": ["item-id-1", "item-id-2"] }. If no items are suitable, return an empty array.`;
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    suggestions: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.STRING,
+                            description: 'The ID of a suggested wardrobe item.',
+                        },
+                        description: 'An array of suggested wardrobe item IDs.',
+                    },
+                },
+                required: ["suggestions"],
+            },
+        },
+    });
+
+    try {
+        const jsonString = response.text.trim();
+        const result = JSON.parse(jsonString);
+        
+        if (result && Array.isArray(result.suggestions)) {
+            return result.suggestions.filter((id: unknown) => typeof id === 'string');
+        } else {
+            throw new Error("Invalid JSON structure received from API. 'suggestions' array not found.");
+        }
+    } catch (e) {
+        console.error("Failed to parse style suggestions JSON:", e);
+        throw new Error("The AI returned an unexpected format for the style suggestions. Please try again.");
+    }
+};
